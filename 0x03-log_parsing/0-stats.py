@@ -1,39 +1,56 @@
 #!/usr/bin/python3
-"""
-Log parsing
-"""
-
 import sys
+import signal
+import re
 
-if __name__ == '__main__':
+total_file_size = 0
+status_code_counts = {
+    "200": 0,
+    "301": 0,
+    "400": 0,
+    "401": 0,
+    "403": 0,
+    "404": 0,
+    "405": 0,
+    "500": 0
+}
 
-    filesize, count = 0, 0
-    codes = ["200", "301", "400", "401", "403", "404", "405", "500"]
-    stats = {k: 0 for k in codes}
+line_count = 0
 
-    def print_stats(stats: dict, file_size: int) -> None:
-        print("File size: {:d}".format(filesize))
-        for k, v in sorted(stats.items()):
-            if v:
-                print("{}: {}".format(k, v))
+# Regex pattern to match the log line format
+log_pattern = re.compile(
+    r'(?P<ip>\d{1,3}(?:\.\d{1,3}){3}) - \[.+\] "GET /projects/260 HTTP/1\.1" (?P<status>\d{3}) (?P<size>\d+)'
+)
 
-    try:
-        for line in sys.stdin:
-            count += 1
-            data = line.split()
-            try:
-                status_code = data[-2]
-                if status_code in stats:
-                    stats[status_code] += 1
-            except BaseException:
-                pass
-            try:
-                filesize += int(data[-1])
-            except BaseException:
-                pass
-            if count % 10 == 0:
-                print_stats(stats, filesize)
-        print_stats(stats, filesize)
-    except KeyboardInterrupt:
-        print_stats(stats, filesize)
-        raise
+def print_stats():
+    """Prints the accumulated statistics."""
+    print(f"File size: {total_file_size}")
+    for status_code in sorted(status_code_counts.keys()):
+        if status_code_counts[status_code] > 0:
+            print(f"{status_code}: {status_code_counts[status_code]}")
+
+def signal_handler(sig, frame):
+    """Handles the keyboard interruption signal (CTRL + C)."""
+    print_stats()
+    sys.exit(0)
+
+# Set up the signal handler for keyboard interruption
+signal.signal(signal.SIGINT, signal_handler)
+
+try:
+    for line in sys.stdin:
+        match = log_pattern.match(line)
+        if match:
+            status_code = match.group("status")
+            file_size = int(match.group("size"))
+            total_file_size += file_size
+            if status_code in status_code_counts:
+                status_code_counts[status_code] += 1
+        line_count += 1
+
+        if line_count % 10 == 0:
+            print_stats()
+except KeyboardInterrupt:
+    print_stats()
+    raise
+
