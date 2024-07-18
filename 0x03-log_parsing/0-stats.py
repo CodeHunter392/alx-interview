@@ -1,56 +1,74 @@
 #!/usr/bin/python3
+"""
+Log stats module
+"""
 import sys
-import signal
-import re
+from operator import itemgetter
 
-total_file_size = 0
-status_code_counts = {
-    "200": 0,
-    "301": 0,
-    "400": 0,
-    "401": 0,
-    "403": 0,
-    "404": 0,
-    "405": 0,
-    "500": 0
-}
 
-line_count = 0
+def log_parser(log):
+    """
+    Parses log into different fields
+    """
+    log_fields = log.split()
+    file_size = int(log_fields[-1])
+    status_code = log_fields[-2]
+    return status_code, file_size
 
-# Regex pattern to match the log line format
-log_pattern = re.compile(
-    r'(?P<ip>\d{1,3}(?:\.\d{1,3}){3}) - \[.+\] "GET /projects/260 HTTP/1\.1" (?P<status>\d{3}) (?P<size>\d+)'
-)
 
-def print_stats():
-    """Prints the accumulated statistics."""
-    print(f"File size: {total_file_size}")
-    for status_code in sorted(status_code_counts.keys()):
-        if status_code_counts[status_code] > 0:
-            print(f"{status_code}: {status_code_counts[status_code]}")
+def validate_format(log):
+    """
+    Validates log format
+    """
+    return False if len(log.split()) < 7 else True
 
-def signal_handler(sig, frame):
-    """Handles the keyboard interruption signal (CTRL + C)."""
-    print_stats()
-    sys.exit(0)
 
-# Set up the signal handler for keyboard interruption
-signal.signal(signal.SIGINT, signal_handler)
+def validate_status_code(status_code):
+    """
+    Check if status code entry is valid
+    """
+    valid_status_codes = ["200", "301", "400", "401",
+                          "403", "404", "405", "500"]
+    return True if status_code in valid_status_codes else False
 
-try:
-    for line in sys.stdin:
-        match = log_pattern.match(line)
-        if match:
-            status_code = match.group("status")
-            file_size = int(match.group("size"))
-            total_file_size += file_size
-            if status_code in status_code_counts:
-                status_code_counts[status_code] += 1
-        line_count += 1
 
-        if line_count % 10 == 0:
-            print_stats()
-except KeyboardInterrupt:
-    print_stats()
-    raise
+def print_log(file_size, status_codes) -> None:
+    """
+    Prints out log files
+    """
+    sorted_status_codes = sorted(status_codes.items(), key=itemgetter(0))
+    print('File size: {}'.format(file_size))
+    for code_count in sorted_status_codes:
+        key = code_count[0]
+        value = code_count[1]
+        print("{}: {}".format(key, value))
 
+
+def main():
+    """
+    Reads logs from std in and prints out statistic
+    on status code and file size
+    """
+    status_codes_count = {}
+    total_size = 0
+    log_count = 0
+    try:
+        for log in sys.stdin:
+            log_count += 1
+            if not validate_format(log):
+                continue
+            status_code, file_size = log_parser(log)
+            total_size += file_size
+            if validate_status_code(status_code):
+                entry = {status_code:
+                         status_codes_count.get(status_code, 0) + 1}
+                status_codes_count.update(entry)
+            if not log_count % 10:
+                print_log(total_size, status_codes_count)
+    except KeyboardInterrupt:
+        print_log(total_size, status_codes_count)
+    print_log(total_size, status_codes_count)
+
+
+if __name__ == '__main__':
+    main()
